@@ -1,0 +1,63 @@
+# Prerequisites and build artifacts
+build/
+bin/
+lib/
+*.o
+*.obj
+*.so
+*.dylib
+*.a
+*.exe
+*.out
+*.app
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+
+# OpenMP & MPI temporary logs
+*.log
+mpi_hosts
+hostfile
+rank_*.log
+
+# Checkpoint files
+checkpoints/
+*.ckpt
+
+# IDE and OS files
+.cache/
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.vscode/
+.idea/
+*.swp
+*~
+*.bak
+
+# Unity artifacts (if Unity client is added into a subfolder)
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.pidb
+*.booproj
+
+# Test outputs and profiles
+*.profraw
+*.profdata
+gmon.out
