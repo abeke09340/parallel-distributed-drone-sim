@@ -25,14 +25,15 @@ Phase 4: Fault Tolerance, Evaluation & Visualization (Week 7 - 8)
 ## Phase 1: Foundation & Local Parallel Engine
 **Objective:** Single-node multi-drone physics and OpenMP benchmark.
 
-- [ ] **Project Setup & CMake scaffolding** (`CMakeLists.txt`, headers, git setup)
-- [ ] **Drone agent data structures & kinematics** (`types.hpp`, `drone.cpp`)
-  - Position, velocity, battery drain, waypoint steering.
-- [ ] **Spatial Region & OpenMP Engine** (`engine.cpp`)
-  - Parallel loop (`#pragma omp parallel for`) for 500+ drones at 60 Hz.
-- [ ] **Sensory Field-of-View & Target generation** (`drone.cpp`, `sensor_fusion.hpp`)
-  - Distance checks, noise simulation, observation records.
-- [ ] **Basic CLI telemetry & benchmarks** (measuring tick execution time vs thread count)
+- [x] **Project Setup & CMake scaffolding** (`CMakeLists.txt`, headers, git setup, optional MPI support)
+- [x] **Drone agent data structures & kinematics** (`types.hpp`, `drone.cpp`)
+  - Position, velocity, battery drain, continuous waypoint steering & boundary clamping.
+- [x] **Spatial Region & OpenMP Engine** (`engine.cpp`)
+  - Parallel loop (`#pragma omp parallel for`) for 500+ drones with deterministic thread-invariance.
+- [x] **Sensory Field-of-View & Target generation** (`drone.cpp`, `sensor_fusion.hpp`)
+  - Distance checks, Gaussian noise simulation, observation records.
+- [x] **Basic CLI telemetry & benchmarks** (`src/benchmark/local_benchmark.cpp`)
+  - Measuring tick execution time, speedup, and efficiency vs OpenMP thread count (1, 2, 4, 8 threads).
 
 ---
 

@@ -4,6 +4,7 @@
 #include <random>
 #include <iostream>
 #include <algorithm>
+#include <cstddef>
 
 namespace sim {
 
@@ -20,6 +21,7 @@ SimulationEngine::SimulationEngine(int rank, int num_ranks)
 void SimulationEngine::initialize_agents(int count) {
     drones_.clear();
     drones_.reserve(count);
+    current_step_ = 0;
 
     std::mt19937 rng(1337 + rank_ * 42);
     std::uniform_real_distribution<float> dist_x(bounds_.min_x + 20.0f, bounds_.max_x - 20.0f);
@@ -28,8 +30,8 @@ void SimulationEngine::initialize_agents(int count) {
 
     // Random targets for patrol across regions
     const auto& config = get_global_config();
-    std::uniform_real_distribution<float> wp_x(0.0f, config.world_width);
-    std::uniform_real_distribution<float> wp_y(0.0f, config.world_length);
+    std::uniform_real_distribution<float> wp_x(20.0f, config.world_width - 20.0f);
+    std::uniform_real_distribution<float> wp_y(20.0f, config.world_length - 20.0f);
 
     int id_offset = rank_ * 10000;
     for (int i = 0; i < count; ++i) {
@@ -48,10 +50,12 @@ void SimulationEngine::set_targets(const std::vector<Vector3>& targets) {
 void SimulationEngine::step(float dt) {
     current_step_++;
 
-    // Parallel agent kinematic updates with OpenMP
+    const std::ptrdiff_t drone_count = static_cast<std::ptrdiff_t>(drones_.size());
+
+    // Parallel agent kinematic updates with OpenMP (signed index for MSVC compatibility)
     #pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < drones_.size(); ++i) {
-        drones_[i].update(dt);
+    for (std::ptrdiff_t i = 0; i < drone_count; ++i) {
+        drones_[static_cast<size_t>(i)].update(dt);
     }
 
     // Parallel sensor scans with thread-local buffers
@@ -62,23 +66,22 @@ void SimulationEngine::step(float dt) {
     {
         #pragma omp single
         {
-            thread_observations.resize(omp_get_num_threads());
+            thread_observations.resize(static_cast<size_t>(omp_get_num_threads()));
         }
 
         int tid = omp_get_thread_num();
 
         #pragma omp for schedule(dynamic, 16)
-        for (size_t i = 0; i < drones_.size(); ++i) {
-            auto obs = drones_[i].scan_targets(targets_, current_step_, 100.0f);
+        for (std::ptrdiff_t i = 0; i < drone_count; ++i) {
+            auto obs = drones_[static_cast<size_t>(i)].scan_targets(targets_, current_step_, 150.0f);
             if (!obs.empty()) {
-                thread_observations[tid].insert(
-                    thread_observations[tid].end(), obs.begin(), obs.end()
-                );
+                auto& local_buf = thread_observations[static_cast<size_t>(tid)];
+                local_buf.insert(local_buf.end(), obs.begin(), obs.end());
             }
         }
     }
 
-    // Aggregate thread-local observations
+    // Aggregate thread-local observations in deterministic thread order
     for (const auto& obs_vec : thread_observations) {
         latest_observations_.insert(latest_observations_.end(), obs_vec.begin(), obs_vec.end());
     }
