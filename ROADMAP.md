@@ -1,6 +1,6 @@
-# Project Roadmap & Task Distribution
+# Project Roadmap
 
-This roadmap breaks down the development of the **Distributed Multi-Agent Simulation** into 4 structured milestones. Tasks are assigned between **Abdirakhman** and **Meiirlan** according to their focus areas.
+This roadmap breaks down the development of the **Distributed Multi-Agent Simulation** into 4 structured milestones. Work proceeds collectively as a single unified team.
 
 ---
 
@@ -25,58 +25,58 @@ Phase 4: Fault Tolerance, Evaluation & Visualization (Week 7 - 8)
 ## Phase 1: Foundation & Local Parallel Engine
 **Objective:** Single-node multi-drone physics and OpenMP benchmark.
 
-- [ ] **Project Setup & CMake scaffolding** (`CMakeLists.txt`, headers, git setup) — *Joint*
-- [ ] **Drone agent data structures & kinematics** (`types.hpp`, `drone.cpp`) — *Abdirakhman*
+- [ ] **Project Setup & CMake scaffolding** (`CMakeLists.txt`, headers, git setup)
+- [ ] **Drone agent data structures & kinematics** (`types.hpp`, `drone.cpp`)
   - Position, velocity, battery drain, waypoint steering.
-- [ ] **Spatial Region & OpenMP Engine** (`engine.cpp`) — *Abdirakhman*
+- [ ] **Spatial Region & OpenMP Engine** (`engine.cpp`)
   - Parallel loop (`#pragma omp parallel for`) for 500+ drones at 60 Hz.
-- [ ] **Sensory Field-of-View & Target generation** (`drone.cpp`, `sensor_fusion.hpp`) — *Meiirlan*
+- [ ] **Sensory Field-of-View & Target generation** (`drone.cpp`, `sensor_fusion.hpp`)
   - Distance checks, noise simulation, observation records.
-- [ ] **Basic CLI telemetry & benchmarks** (measuring tick execution time vs thread count) — *Meiirlan*
+- [ ] **Basic CLI telemetry & benchmarks** (measuring tick execution time vs thread count)
 
 ---
 
 ## Phase 2: Distributed MPI & Agent Migration
 **Objective:** Two nodes exchanging drone state dynamically when crossing the boundary.
 
-- [ ] **MPI Lifecycle Manager** (`mpi_manager.cpp`) — *Abdirakhman*
+- [ ] **MPI Lifecycle Manager** (`mpi_manager.cpp`)
   - Initialize MPI, rank identification (Rank 0 = Region A, Rank 1 = Region B).
-- [ ] **Message Protocol & Binary Serialization** (`protocol.hpp`) — *Joint*
+- [ ] **Message Protocol & Binary Serialization** (`protocol.hpp`)
   - Packed structs or serialization buffers for MPI send/recv.
-- [ ] **2-Phase Migration Protocol** (`migration_manager.cpp`) — *Abdirakhman*
+- [ ] **2-Phase Migration Protocol** (`migration_manager.cpp`)
   - Detect $X \ge 500.0$, serialize drone, send `MSG_MIGRATION_REQ`, wait for `MSG_MIGRATION_ACK`.
-- [ ] **Target Node Ingestion & De-duplication** — *Meiirlan*
+- [ ] **Target Node Ingestion & De-duplication**
   - Receive drone payload on Rank 1, instantiate local drone, send ACK.
-- [ ] **Migration Latency & Zero-Duplicate Verification Tests** — *Joint*
+- [ ] **Migration Latency & Zero-Duplicate Verification Tests**
 
 ---
 
 ## Phase 3: Sensor Fusion & Distributed Task Allocation
 **Objective:** Multi-node perception and decentralized mission planning.
 
-- [ ] **Decentralized Track Manager** (`sensor_fusion.cpp`) — *Meiirlan*
+- [ ] **Decentralized Track Manager** (`sensor_fusion.cpp`)
   - Multi-observation clustering for simulated target objects.
-- [ ] **Time- & Confidence-Weighted Fusion** — *Meiirlan*
+- [ ] **Time- & Confidence-Weighted Fusion**
   - Equation: $\hat{P} = \sum w_i P_i / \sum w_i$ with exponential time decay.
-- [ ] **Distributed Task Auction & Coordination** (`task_coordinator.cpp`) — *Meiirlan*
+- [ ] **Distributed Task Auction & Coordination** (`task_coordinator.cpp`)
   - Dynamic missions (Search, Track, Inspect).
   - Bid evaluation: $U = f(\text{dist}, \text{battery}, \text{workload})$.
-- [ ] **Consensus Resolution over MPI** (`MSG_TASK_ANNOUNCE`, `MSG_TASK_CLAIM`) — *Abdirakhman*
+- [ ] **Consensus Resolution over MPI** (`MSG_TASK_ANNOUNCE`, `MSG_TASK_CLAIM`)
 
 ---
 
 ## Phase 4: Fault Tolerance, Evaluation & Visualization
 **Objective:** Node failure recovery, network partition tolerance, and final evaluation.
 
-- [ ] **Heartbeat Monitor & Timeout Handler** (`fault_manager.cpp`) — *Abdirakhman*
+- [ ] **Heartbeat Monitor & Timeout Handler** (`fault_manager.cpp`)
   - Periodic ping/pong, detect missing rank after threshold.
-- [ ] **State Checkpointing & Asynchronous Replication** — *Abdirakhman*
+- [ ] **State Checkpointing & Asynchronous Replication**
   - Periodic snapshot of active mission tracks and border states.
-- [ ] **Split-Brain & Partition Reconciliation** — *Joint*
+- [ ] **Split-Brain & Partition Reconciliation**
   - Simulate network cut (`mpirun` partition injection), resume and reconcile sequence logs.
-- [ ] **Telemetry Bridge for Visualization** (`bridge.cpp`) — *Meiirlan*
+- [ ] **Telemetry Bridge for Visualization** (`bridge.cpp`)
   - Lightweight TCP/WebSocket server broadcasting JSON frames to Unity / Web Viewer.
-- [ ] **Experimental Benchmark Scripts & Final Report Data** — *Joint*
+- [ ] **Experimental Benchmark Scripts & Final Report Data**
   - Speedup curves (OpenMP 1, 2, 4, 8 threads).
   - Distribution overhead (Single-node vs 2-node).
   - Migration latency & recovery time graphs.
