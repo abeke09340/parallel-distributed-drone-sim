@@ -4,6 +4,21 @@ This document describes the design, protocols, threading models, and communicati
 
 ---
 
+## 🛠 Технологический стек проекта
+
+```
++-----------------------------------------------------------------------------------+
+| 1. C++20        | Чистая логика дронов, физика, сенсоры и миссии                  |
+| 2. OpenMP       | #pragma omp parallel for — параллелим расчеты роя по ядрам ПК   |
+| 3. OpenMPI      | Связь между нодами: передача дронов при миграции и синхронизация|
+| 4. CMake        | Сборка всего проекта одной командой (make / ninja)              |
+| 5. TCP/Sockets  | Легковесный стриминг кадров (JSON/координаты) из C++ наружу    |
+| 6. Visualizer   | Экран: граница X=500, синие/зеленые дроны, живая миграция роя   |
++-----------------------------------------------------------------------------------+
+```
+
+---
+
 ## 1. Spatial Partitioning & World Geometry
 
 The virtual simulation space is defined as a continuous 2D/3D coordinate domain:
