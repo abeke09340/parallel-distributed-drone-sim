@@ -1,6 +1,7 @@
 #include "core/config.hpp"
 #include "simulation/engine.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <fstream>
@@ -18,6 +19,9 @@ struct BenchmarkOptions {
     std::vector<int> thread_counts{1, 2, 4, 8};
     int steps{500};
     std::string csv_path{};
+    bool trace_mode{false};
+    int trace_drone_id{0};
+    int trace_interval{25};
 };
 
 std::vector<int> parse_int_list(const std::string& str) {
@@ -47,12 +51,21 @@ BenchmarkOptions parse_args(int argc, char** argv) {
             opts.steps = std::stoi(argv[++i]);
         } else if (arg == "--csv" && i + 1 < argc) {
             opts.csv_path = argv[++i];
+        } else if (arg == "--trace") {
+            opts.trace_mode = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                opts.trace_drone_id = std::stoi(argv[++i]);
+            }
+        } else if (arg == "--trace-interval" && i + 1 < argc) {
+            opts.trace_interval = std::max(1, std::stoi(argv[++i]));
         } else if (arg == "--help" || arg == "-h") {
             std::cout << "Usage: local_benchmark [options]\n"
-                      << "  --drones <N1,N2,...>   Comma-separated drone counts (default: 100,500,1000)\n"
-                      << "  --threads <T1,T2,...>  Comma-separated OpenMP thread counts (default: 1,2,4,8)\n"
-                      << "  --steps <S>            Simulation steps per run (default: 500)\n"
-                      << "  --csv <file.csv>       Optional path to export benchmark results as CSV\n";
+                      << "  --drones <N1,N2,...>     Comma-separated drone counts (default: 100,500,1000)\n"
+                      << "  --threads <T1,T2,...>    Comma-separated OpenMP thread counts (default: 1,2,4,8)\n"
+                      << "  --steps <S>              Simulation steps per run (default: 500)\n"
+                      << "  --trace [drone_id]       Print live 3D kinematics & sensor trace for a drone (default ID: 0)\n"
+                      << "  --trace-interval <K>     Print every K steps in trace mode (default: 25)\n"
+                      << "  --csv <file.csv>         Optional path to export benchmark results as CSV\n";
             std::exit(0);
         }
     }
@@ -83,6 +96,94 @@ double compute_state_checksum(const std::vector<sim::Drone>& drones) {
     return sum;
 }
 
+void run_kinematic_trace(
+    const BenchmarkOptions& opts,
+    const std::vector<sim::Vector3>& targets
+) {
+    auto& config = sim::get_global_config();
+    int num_drones = opts.drone_counts.empty() ? 100 : opts.drone_counts.front();
+    int drone_idx = std::clamp(opts.trace_drone_id, 0, num_drones - 1);
+
+    sim::SimulationEngine engine(0, 1);
+    engine.initialize_agents(num_drones);
+    engine.set_targets(targets);
+
+    std::cout << "\n====================================================================================================\n";
+    std::cout << " 3D Kinematic & Sensor Telemetry Trace — Drone #" << drone_idx
+              << " (dt = " << config.delta_time << "s, max_speed = " << config.max_speed << " m/s)\n";
+    std::cout << "====================================================================================================\n";
+    std::cout << std::left
+              << std::setw(7)  << "Step"
+              << std::setw(26) << "3D Position (X, Y, Z)"
+              << std::setw(24) << "Velocity (Vx, Vy, Vz)"
+              << std::setw(26) << "Target Waypoint"
+              << std::setw(10) << "Dist(m)"
+              << std::setw(10) << "Battery"
+              << "Sensor Hits\n";
+    std::cout << "----------------------------------------------------------------------------------------------------\n";
+
+    sim::Vector3 prev_wp = engine.get_drones()[static_cast<size_t>(drone_idx)].get_state().target_waypoint;
+
+    for (int step = 1; step <= opts.steps; ++step) {
+        engine.step(config.delta_time);
+        const auto& s = engine.get_drones()[static_cast<size_t>(drone_idx)].get_state();
+
+        bool waypoint_changed = (s.target_waypoint.distance_to(prev_wp) > 1e-3f);
+        if (waypoint_changed) {
+            std::cout << "  >>> [Step " << step << "] Drone #" << drone_idx
+                      << " REACHED waypoint (" << std::fixed << std::setprecision(1)
+                      << prev_wp.x << ", " << prev_wp.y << ", " << prev_wp.z
+                      << ") -> New 3D Waypoint assigned: ("
+                      << s.target_waypoint.x << ", " << s.target_waypoint.y << ", " << s.target_waypoint.z << ")\n";
+            prev_wp = s.target_waypoint;
+        }
+
+        if (step == 1 || step % opts.trace_interval == 0 || step == opts.steps) {
+            // Count observations from this specific drone on this step
+            const auto& all_obs = engine.collect_sensor_observations();
+            int drone_hits = 0;
+            sim::SensorObservation sample_obs{};
+            for (const auto& obs : all_obs) {
+                if (obs.drone_id == s.id) {
+                    if (drone_hits == 0) sample_obs = obs;
+                    drone_hits++;
+                }
+            }
+
+            std::ostringstream pos_ss, vel_ss, wp_ss, bat_ss;
+            pos_ss << std::fixed << std::setprecision(1)
+                   << "(" << s.position.x << ", " << s.position.y << ", " << s.position.z << ")";
+            vel_ss << std::fixed << std::setprecision(1)
+                   << "(" << s.velocity.x << ", " << s.velocity.y << ", " << s.velocity.z << ")";
+            wp_ss  << std::fixed << std::setprecision(1)
+                   << "(" << s.target_waypoint.x << ", " << s.target_waypoint.y << ", " << s.target_waypoint.z << ")";
+            bat_ss << std::fixed << std::setprecision(2) << s.battery << "%";
+
+            float dist_to_wp = s.position.distance_to(s.target_waypoint);
+
+            std::cout << std::left
+                      << std::setw(7)  << step
+                      << std::setw(26) << pos_ss.str()
+                      << std::setw(24) << vel_ss.str()
+                      << std::setw(26) << wp_ss.str()
+                      << std::fixed << std::setprecision(1)
+                      << std::setw(10) << dist_to_wp
+                      << std::setw(10) << bat_ss.str()
+                      << drone_hits;
+
+            if (drone_hits > 0) {
+                const auto& true_t = targets[static_cast<size_t>(sample_obs.target_id)];
+                float err = sample_obs.estimated_position.distance_to(true_t);
+                std::cout << " [Target #" << sample_obs.target_id
+                          << " noisy est err=" << std::setprecision(2) << err
+                          << "m, conf=" << sample_obs.confidence << "]";
+            }
+            std::cout << "\n";
+        }
+    }
+    std::cout << "====================================================================================================\n";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -98,6 +199,10 @@ int main(int argc, char** argv) {
               << config.world_length << " x " << config.world_height << "] m | "
               << "Targets: " << targets.size() << " | Steps/run: " << opts.steps << "\n";
     std::cout << "====================================================================================\n";
+
+    if (opts.trace_mode) {
+        run_kinematic_trace(opts, targets);
+    }
 
     std::ofstream csv_file;
     if (!opts.csv_path.empty()) {
