@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.hpp"
+#include <type_traits>
 
 namespace sim {
 
@@ -10,6 +11,7 @@ enum MpiMessageTag : int32_t {
     TAG_MIGRATION_REQ = 20,
     TAG_MIGRATION_ACK = 21,
     TAG_SENSOR_OBSERVATION = 30,
+    TAG_COMBAT_EVENT = 35,
     TAG_TASK_ANNOUNCE = 40,
     TAG_TASK_BID = 41,
     TAG_TASK_CLAIM = 42,
@@ -38,6 +40,16 @@ struct HeartbeatPayload {
     double timestamp_ms{0.0};
 };
 
+// Cross-node combat hit synchronization payload
+struct CombatEventPayload {
+    int32_t target_id{0};
+    int32_t attacker_drone_id{0};
+    int32_t source_rank{0};
+    uint32_t step{0};
+    float damage{50.0f};
+    bool hit{true};
+};
+
 // Task Auction announcement
 struct TaskAuctionPayload {
     int32_t task_id{0};
@@ -54,5 +66,18 @@ struct TaskClaimPayload {
     int32_t winning_rank{0};
     float winning_bid{0.0f};
 };
+
+static_assert(std::is_trivially_copyable_v<MigrationPayload>,
+              "MigrationPayload must be trivially copyable for MPI");
+static_assert(std::is_trivially_copyable_v<MigrationAckPayload>,
+              "MigrationAckPayload must be trivially copyable for MPI");
+static_assert(std::is_trivially_copyable_v<HeartbeatPayload>,
+              "HeartbeatPayload must be trivially copyable for MPI");
+static_assert(std::is_trivially_copyable_v<CombatEventPayload>,
+              "CombatEventPayload must be trivially copyable for MPI");
+static_assert(std::is_trivially_copyable_v<TaskAuctionPayload>,
+              "TaskAuctionPayload must be trivially copyable for MPI");
+static_assert(std::is_trivially_copyable_v<TaskClaimPayload>,
+              "TaskClaimPayload must be trivially copyable for MPI");
 
 }  // namespace sim

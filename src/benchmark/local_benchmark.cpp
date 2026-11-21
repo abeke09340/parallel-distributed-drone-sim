@@ -72,13 +72,16 @@ BenchmarkOptions parse_args(int argc, char** argv) {
     return opts;
 }
 
-std::vector<sim::Vector3> generate_world_targets(int count = 25) {
+std::vector<sim::Vector3> generate_world_targets(const sim::SimulationConfig& config, int count = 25) {
     std::vector<sim::Vector3> targets;
     targets.reserve(static_cast<size_t>(count));
+    const int span_x = static_cast<int>(config.world_width) - 1000;
+    const int span_y = static_cast<int>(config.world_length) - 1000;
+    const int span_z = static_cast<int>(config.world_height) - 60;
     for (int i = 0; i < count; ++i) {
-        float x = 100.0f + static_cast<float>((i * 173) % 800);
-        float y = 100.0f + static_cast<float>((i * 257) % 800);
-        float z = 15.0f + static_cast<float>((i * 43) % 120);
+        float x = 500.0f + static_cast<float>((i * 7919) % span_x);
+        float y = 500.0f + static_cast<float>((i * 6271) % span_y);
+        float z = 30.0f + static_cast<float>((i * 97) % span_z);
         targets.emplace_back(x, y, z);
     }
     return targets;
@@ -189,7 +192,7 @@ void run_kinematic_trace(
 int main(int argc, char** argv) {
     BenchmarkOptions opts = parse_args(argc, argv);
     auto& config = sim::get_global_config();
-    auto targets = generate_world_targets(25);
+    auto targets = generate_world_targets(config, 25);
 
     std::cout << "====================================================================================\n";
     std::cout << " Phase 1: Local Parallel Simulation Engine & OpenMP Benchmark\n";

@@ -31,6 +31,10 @@ Drone::Drone(int id, int owner_rank, Vector3 initial_pos) {
     state_.status = DroneStatus::PATROL;
     state_.assigned_task_id = -1;
     state_.seq_num = 1;
+    state_.hp = 100.0f;
+    state_.threat_level = 0.0f;
+    state_.firing_target_id = -1;
+    state_.fire_cooldown = 0.0f;
 }
 
 void Drone::set_waypoint(const Vector3& wp) {

@@ -40,18 +40,30 @@ Phase 4: Fault Tolerance, Evaluation & Visualization (Week 7 - 8)
 ## Phase 2: Distributed MPI & Agent Migration
 **Objective:** Two nodes exchanging drone state dynamically when crossing the boundary (`X = 25000.0 m`).
 
-- [ ] **World Scale & Spatial Geometry Update** (`config.hpp`, `types.hpp`)
+- [x] **World Scale & Spatial Geometry Update** (`config.hpp`, `types.hpp`)
   - Scale each sector to `25 km × 25 km` (Global world `50 km × 25 km`, Node 0: `X ∈ [0, 25000)`, Node 1: `X ∈ [25000, 50000]`, buffer zone `±250 m`, 500 drones/sector = 2 drones per 100 m of sector side).
   - Add flat POD fields to `DroneState` (`hp`, `threat_level`, `firing_target_id`, `fire_cooldown`) and `TargetEntity` (`hp`, `is_hostile`, `threat_radius`, `alive`).
-- [ ] **MPI Lifecycle Manager** (`mpi_manager.cpp`)
+- [x] **MPI Lifecycle Manager** (`mpi_manager.cpp`)
   - Initialize MPI, rank identification (Rank 0 = Region A, Rank 1 = Region B), non-blocking `MPI_Isend` / batching.
-- [ ] **Message Protocol & Binary Serialization** (`protocol.hpp`)
+- [x] **Message Protocol & Binary Serialization** (`protocol.hpp`)
   - Packed POD structs for MPI send/recv, including `TAG_COMBAT_EVENT` for cross-node hit synchronization.
-- [ ] **2-Phase Migration Protocol** (`migration_manager.cpp`)
+- [x] **2-Phase Migration Protocol** (`migration_manager.cpp`)
   - Detect `X >= 25000.0` (with `±250 m` hysteresis), serialize drone (preserving `hp`, `threat_level`, active mission), send `MSG_MIGRATION_REQ`, wait for `MSG_MIGRATION_ACK` + timeout/rollback.
-- [ ] **Target Node Ingestion & De-duplication**
+- [x] **Target Node Ingestion & De-duplication**
   - Receive drone payload on Rank 1, instantiate local drone, send ACK.
-- [ ] **Migration Latency & Zero-Duplicate Verification Tests**
+- [x] **Migration Latency & Zero-Duplicate Verification Tests** (`tests/migration_test.cpp`)
+  - Verified with `mpirun -np 2`: 1000 drones conserved (`Rank 0` + `Rank 1` == 1000 unique IDs), bidirectional migration, non-blocking `MPI_Isend`, timeout rollback + retry recovery.
+
+---
+
+### 📝 Phase 2 Implementation Notes (for Team / AI Context)
+> **Summary of additions beyond base bullet points:**
+> - `include/core/types.hpp`: Added `id` field to `TargetEntity` and `static_assert(std::is_trivially_copyable_v<...>)` for `DroneState` and `TargetEntity`.
+> - `include/comm/protocol.hpp`: Added `CombatEventPayload` struct for `TAG_COMBAT_EVENT` and `static_assert(std::is_trivially_copyable_v<...>)` for all MPI payloads.
+> - `include/comm/mpi_manager.hpp` & `src/comm/mpi_manager.cpp`: Added `MPI_Isend` buffer management (`pending_sends_`, `flush_completed_sends()`), batch APIs (`send_migration_batch()`, `send_sensor_observations_batch()`), `send_combat_event()`, and optional 5th parameter `incoming_combat_events = nullptr` in `poll_incoming_messages()` to preserve `main.cpp` compatibility.
+> - `include/simulation/engine.hpp` & `src/simulation/engine.cpp`: `ingest_migrated_drone()` returns `bool` (true if new, false if duplicate) and preserves `TASK_EXECUTING` status; added `rollback_migrated_out()`.
+> - `include/migration/migration_manager.hpp` & `src/migration/migration_manager.cpp`: Added `check_timeouts(current_step, timeout_steps)`, `seq_num` ACK validation, rejection/timeout rollback, and `get_total_rollbacks()` / `get_pending_count()`.
+> - `tests/migration_test.cpp`: New 2-rank MPI test verifying zero duplicates, zero losses, and migration poll latency.
 
 ---
 
