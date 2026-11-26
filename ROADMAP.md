@@ -70,21 +70,29 @@ Phase 4: Fault Tolerance, Evaluation & Visualization (Week 7 - 8)
 ## Phase 3: Sensor Fusion, Combat/Threat Logic & Distributed Task Allocation
 **Objective:** Multi-node perception, basic threat/combat FSM, and decentralized 3-mode mission planning.
 
-- [ ] **Decentralized Track Manager** (`sensor_fusion.cpp`)
+- [x] **Decentralized Track Manager** (`sensor_fusion.cpp`)
   - Multi-observation clustering for hostile and non-hostile targets (radar range `1200 m`).
-- [ ] **Time- & Confidence-Weighted Fusion**
+- [x] **Time- & Confidence-Weighted Fusion**
   - Equation: $\hat{P} = \sum w_i P_i / \sum w_i$ with exponential time decay.
-- [ ] **Basic Threat Assessment, Combat & Drone FSM** (`drone.cpp`, `engine.cpp`)
+- [x] **Basic Threat Assessment, Combat & Drone FSM** (`drone.cpp`, `engine.cpp`)
   - Equal drone damage (`50 HP` / shot, 2 hits = target elimination, `fire_cooldown = 1.5 s`) with deterministic **10% miss probability** (`make_deterministic_seed` — preserves Thread-Invariance), thread-local `DamageEvent` buffers in OpenMP, `TAG_COMBAT_EVENT` sync over MPI.
   - Basic `threat_level ∈ [0, 1]` (hostile proximity + low HP/battery) and automatic mode switching (`PATROL` ↔ `RECONNAISSANCE` ↔ `OBJECT_INSPECTION` ↔ `TARGET_ELIMINATION` ↔ `EVADE` / `FAILED`).
-- [ ] **Distributed 3-Mode Task Auction & Cross-Sector Reinforcements** (`task_coordinator.cpp`)
+- [x] **Distributed 3-Mode Task Auction & Cross-Sector Reinforcements** (`task_coordinator.cpp`)
   - **3 Task Modes:**
     1. `RECONNAISSANCE` — POD `waypoints[3]` (`waypoint_count = 1` for point check, `2..3` for area search; completes when all waypoints visited or object detected).
     2. `OBJECT_INSPECTION` — close approach (`30–40 m`) to minimize sensor noise and classify target (`is_hostile` vs non-hostile).
     3. `TARGET_ELIMINATION` — sole combat mode with `TAG_COMBAT_EVENT` sync (eligibility guard: `hp >= 40`, `battery >= 20%`).
   - **Dynamic Force-Ratio Analysis & Smart Reinforcements:** for any detected hostile group ($N \ge 1$, even 1–2 enemies), compare local effective combat power ($\text{FriendlyPower} = \sum \text{HP}_d / 100$ for drones with $\text{HP} \ge 40$) against required force with safety margin ($\text{RequiredPower} = 1.5 \cdot \sum \text{HP}_e / 100$, accounting for 10% miss rate & return fire). Whenever $\text{deficit} = \lceil \text{RequiredPower} - \text{FriendlyPower} \rceil > 0$, pull free drones locally first (keeping a 20% sector reserve) and broadcast any remaining `remote_deficit` via `MSG_TASK_ANNOUNCE` over MPI so reinforcements migrate across `X = 25000 m`.
   - Mode-weighted bid evaluation: $U = f(\text{dist}, \text{HP}, \text{battery}, \text{threat}, \text{workload})$.
-- [ ] **Consensus Resolution over MPI** (`MSG_TASK_ANNOUNCE`, `MSG_TASK_BID`, `MSG_TASK_CLAIM`)
+- [x] **Consensus Resolution over MPI** (`MSG_TASK_ANNOUNCE`, `MSG_TASK_BID`, `MSG_TASK_CLAIM`)
+
+### 📝 Phase 3 Implementation Notes (for Team / AI Context)
+> - `include/core/types.hpp`: Extended `DroneStatus` (`RECONNAISSANCE`, `OBJECT_INSPECTION`, `TARGET_ELIMINATION`, `EVADE`), `TaskType`, `Task` (`waypoints[3]`, `waypoint_count`, `target_id`, `required_drones`), `SensorObservation` (`is_hostile`, `classified`), and added `DamageEvent` POD struct.
+> - `include/fusion/sensor_fusion.hpp` & `src/fusion/sensor_fusion.cpp`: Exponential time decay (`exp(-0.04 * dt)`), spatial clustering fallback (`150 m`), classification tracking, and `apply_damage_to_track()` / `get_hostile_tracks()`.
+> - `include/simulation/drone.hpp/cpp` & `engine.hpp/cpp`: Added `scan_entities()`, `update_threat_and_fsm()`, `try_fire()` (`50 HP`, `1.5 s` cooldown, `10%` deterministic miss via `make_deterministic_seed`), thread-local `DamageEvent` buffers, and `set_target_entities()` while keeping `local_benchmark` compatibility.
+> - `include/task_allocation/task_coordinator.hpp/cpp`: Implemented 3-mode task lifecycle, `evaluate_bid()`, `evaluate_force_ratios()` (20% reserve + `remote_deficit`), and MPI auction handlers.
+> - `include/comm/protocol.hpp` & `mpi_manager.hpp/cpp`: Added `TaskBidPayload`, extended `TaskAuctionPayload` / `TaskClaimPayload`, and added `send_task_announce/bid/claim` + optional `poll_incoming_messages` args.
+> - `tests/phase3_test.cpp`: End-to-end 2-rank MPI test verifying classification, cross-sector reinforcement migration, combat elimination, and `TAG_COMBAT_EVENT` sync.
 
 ---
 

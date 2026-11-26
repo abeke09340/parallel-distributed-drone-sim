@@ -112,7 +112,8 @@ For in-depth diagrams and message formats, see [ARCHITECTURE.md](ARCHITECTURE.md
 │   ├── fault_tolerance/
 │   └── main.cpp                # Distributed MPI node entry point
 ├── tests/
-│   └── migration_test.cpp      # Phase 2 2-node MPI migration & zero-duplicate test
+│   ├── migration_test.cpp      # Phase 2 2-node MPI migration & zero-duplicate test
+│   └── phase3_test.cpp         # Phase 3 sensor fusion, combat FSM & cross-sector auction test
 └── visualization/              # Unity client or telemetry bridges
 ```
 
@@ -169,6 +170,9 @@ mpirun -np 2 ./build/simulation_node
 
 # Run Phase 2 migration & zero-duplicate verification test
 mpirun -np 2 ./build/migration_test
+
+# Run Phase 3 sensor fusion, combat FSM & cross-sector auction test
+mpirun -np 2 ./build/phase3_test
 ```
 
 > **Cross-Platform Note (Windows + macOS):** For distributed runs between a Windows PC and a Mac over LAN/ZeroTier, build and run `simulation_node` and `migration_test` inside **WSL2 (Ubuntu) with OpenMPI** so both machines use the exact same OpenMPI wire protocol. Native Windows (MSVC) continues to support standalone `local_benchmark.exe` without MPI.
