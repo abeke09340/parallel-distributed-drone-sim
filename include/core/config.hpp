@@ -5,19 +5,23 @@
 namespace sim {
 
 struct SimulationConfig {
-    // World dimensions
-    float world_width{1000.0f};   // X [0, 1000]
-    float world_length{1000.0f};  // Y [0, 1000]
-    float world_height{200.0f};   // Z [0, 200]
+    // World dimensions (25 km x 25 km per sector, 50 km x 25 km global)
+    float world_width{50000.0f};   // X [0, 50000]
+    float world_length{25000.0f};  // Y [0, 25000]
+    float world_height{500.0f};    // Z [0, 500]
 
     // Spatial split boundary (Node 0 owns X < boundary, Node 1 owns X >= boundary)
-    float partition_boundary_x{500.0f};
-    float migration_buffer_zone{15.0f};
+    float partition_boundary_x{25000.0f};
+    float migration_buffer_zone{250.0f};  // Hysteresis margin: [24750, 25250] m
 
-    // Agent population
+    // Agent population & scale-matched kinematics/engagement
     int drones_per_node{500};
-    float max_speed{15.0f};        // m/s
-    float battery_drain_rate{0.02f}; // % per second
+    float max_speed{90.0f};              // m/s (80-100 m/s for 25 km sector scale)
+    float battery_drain_rate{0.02f};     // % per second
+    float radar_range{1200.0f};          // m
+    float inspection_range{35.0f};       // m (30-40 m close inspection)
+    float firing_range{150.0f};          // m
+    float hostile_threat_radius{200.0f}; // m
 
     // Timing
     float delta_time{0.05f};       // 20 Hz simulation step (50ms)

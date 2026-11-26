@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <type_traits>
 
 namespace sim {
 
@@ -63,7 +64,27 @@ struct DroneState {
     DroneStatus status{DroneStatus::IDLE};
     int32_t assigned_task_id{-1};
     uint32_t seq_num{0};
+
+    // Scale-matched combat & threat assessment fields (flat POD for MPI)
+    float hp{100.0f};
+    float threat_level{0.0f};
+    int32_t firing_target_id{-1};
+    float fire_cooldown{0.0f};
 };
+static_assert(std::is_trivially_copyable_v<DroneState>,
+              "DroneState must remain trivially copyable for MPI serialization");
+
+// Target entity in the virtual world (flat POD for MPI synchronization)
+struct TargetEntity {
+    int32_t id{0};
+    Vector3 position;
+    float hp{100.0f};
+    bool is_hostile{false};
+    float threat_radius{200.0f};
+    bool alive{true};
+};
+static_assert(std::is_trivially_copyable_v<TargetEntity>,
+              "TargetEntity must remain trivially copyable for MPI serialization");
 
 // Observation produced by an onboard drone sensor
 struct SensorObservation {
@@ -95,11 +116,11 @@ struct Task {
 // Spatial region boundaries
 struct RegionBounds {
     float min_x{0.0f};
-    float max_x{500.0f};
+    float max_x{25000.0f};
     float min_y{0.0f};
-    float max_y{1000.0f};
+    float max_y{25000.0f};
     float min_z{0.0f};
-    float max_z{200.0f};
+    float max_z{500.0f};
 
     bool contains(const Vector3& pos) const {
         return pos.x >= min_x && pos.x < max_x &&

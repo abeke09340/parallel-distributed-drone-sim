@@ -71,9 +71,11 @@ void SimulationEngine::step(float dt) {
 
         int tid = omp_get_thread_num();
 
+        const float radar_range = get_global_config().radar_range;
+
         #pragma omp for schedule(dynamic, 16)
         for (std::ptrdiff_t i = 0; i < drone_count; ++i) {
-            auto obs = drones_[static_cast<size_t>(i)].scan_targets(targets_, current_step_, 150.0f);
+            auto obs = drones_[static_cast<size_t>(i)].scan_targets(targets_, current_step_, radar_range);
             if (!obs.empty()) {
                 auto& local_buf = thread_observations[static_cast<size_t>(tid)];
                 local_buf.insert(local_buf.end(), obs.begin(), obs.end());
@@ -89,12 +91,25 @@ void SimulationEngine::step(float dt) {
 
 std::vector<DroneState> SimulationEngine::extract_boundary_crossing_drones() {
     std::vector<DroneState> migrating_out;
+    if (num_ranks_ <= 1) {
+        return migrating_out;
+    }
+
+    const float margin = get_global_config().migration_buffer_zone;
 
     for (auto& drone : drones_) {
-        if (drone.get_status() == DroneStatus::PATROL) {
+        DroneStatus status = drone.get_status();
+        if (status == DroneStatus::PATROL || status == DroneStatus::TASK_EXECUTING) {
             Vector3 pos = drone.get_position();
-            // Check if drone has moved outside this node's spatial domain
-            if (!bounds_.contains(pos)) {
+            // Hysteresis check: avoid rapid ping-pong migrations near X = 25000 m
+            bool crossed_out = false;
+            if (rank_ == 0 && pos.x >= bounds_.max_x + margin) {
+                crossed_out = true;
+            } else if (rank_ > 0 && pos.x < bounds_.min_x - margin) {
+                crossed_out = true;
+            }
+
+            if (crossed_out) {
                 drone.set_status(DroneStatus::MIGRATING_OUT);
                 migrating_out.push_back(drone.get_state());
             }
@@ -104,21 +119,27 @@ std::vector<DroneState> SimulationEngine::extract_boundary_crossing_drones() {
     return migrating_out;
 }
 
-void SimulationEngine::ingest_migrated_drone(const DroneState& state) {
-    // Check if drone is already locally present to avoid duplicates
+bool SimulationEngine::ingest_migrated_drone(const DroneState& state) {
+    DroneStatus restored_status =
+        (state.assigned_task_id >= 0) ? DroneStatus::TASK_EXECUTING : DroneStatus::PATROL;
+
+    // De-duplication: check if drone is already locally present
     for (auto& drone : drones_) {
         if (drone.get_id() == state.id) {
-            drone = Drone(state);
-            drone.set_status(DroneStatus::PATROL);
-            drone.get_mutable_state().owner_rank = rank_;
-            return;
+            if (state.seq_num > drone.get_state().seq_num) {
+                drone = Drone(state);
+                drone.set_status(restored_status);
+                drone.get_mutable_state().owner_rank = rank_;
+            }
+            return false;
         }
     }
 
     Drone new_drone(state);
-    new_drone.set_status(DroneStatus::PATROL);
+    new_drone.set_status(restored_status);
     new_drone.get_mutable_state().owner_rank = rank_;
     drones_.push_back(new_drone);
+    return true;
 }
 
 void SimulationEngine::finalize_migrated_out(int drone_id) {
@@ -130,6 +151,17 @@ void SimulationEngine::finalize_migrated_out(int drone_id) {
             }),
         drones_.end()
     );
+}
+
+void SimulationEngine::rollback_migrated_out(int drone_id) {
+    for (auto& drone : drones_) {
+        if (drone.get_id() == drone_id && drone.get_status() == DroneStatus::MIGRATING_OUT) {
+            DroneStatus restored =
+                (drone.get_state().assigned_task_id >= 0) ? DroneStatus::TASK_EXECUTING : DroneStatus::PATROL;
+            drone.set_status(restored);
+            return;
+        }
+    }
 }
 
 std::vector<SensorObservation> SimulationEngine::collect_sensor_observations() {

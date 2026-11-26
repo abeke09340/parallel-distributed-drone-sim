@@ -97,7 +97,29 @@ if(MPI_CXX_FOUND)
         $<INSTALL_INTERFACE:include>
         ${MPI_CXX_INCLUDE_PATH}
     )
-    message(STATUS "MPI found: building both 'local_benchmark' and 'simulation_node'")
+
+    add_executable(migration_test
+        ${CORE_SIMULATION_SOURCES}
+        src/comm/mpi_manager.cpp
+        src/migration/migration_manager.cpp
+        tests/migration_test.cpp
+    )
+
+    target_link_libraries(migration_test PRIVATE
+        MPI::MPI_CXX
+        OpenMP::OpenMP_CXX
+        Threads::Threads
+    )
+
+    target_include_directories(migration_test PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+        ${MPI_CXX_INCLUDE_PATH}
+    )
+
+    add_test(NAME MigrationZeroDuplicateTest COMMAND ${MPIEXEC_EXECUTABLE} -np 2 $<TARGET_FILE:migration_test>)
+
+    message(STATUS "MPI found: building 'local_benchmark', 'simulation_node', and 'migration_test'")
     message(STATUS "MPI CXX Compiler: ${MPI_CXX_COMPILER}")
 else()
     message(STATUS "MPI not found: skipping 'simulation_node' target. Building 'local_benchmark' (Phase 1 OpenMP).")

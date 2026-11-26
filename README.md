@@ -18,7 +18,7 @@
 This project implements a high-performance, fault-tolerant distributed multi-agent simulation where a shared virtual environment is partitioned across multiple physical computing nodes (or MPI processes). Each node owns a designated spatial region and simulates hundreds of autonomous drones and virtual sensors concurrently.
 
 ### Key Capabilities
-- **Spatial Partitioning & Invariance:** Virtual 2D/3D environment split between Node A (Region A) and Node B (Region B).
+- **Spatial Partitioning & Invariance:** Virtual 3D environment (`50 km × 25 km × 500 m`) split between Node A (`Region A: 25 × 25 km`, `X < 25000 m`) and Node B (`Region B: 25 × 25 km`, `X >= 25000 m`).
 - **Dynamic Agent Migration:** Autonomous drones crossing region boundaries seamlessly migrate their complete state (coordinates, velocity, mission, battery, sensor log) across physical machines via MPI serialization without duplication or state loss.
 - **Hybrid Parallel & Distributed Model:**
   - **OpenMP** inside each machine for shared-memory parallel processing of hundreds of drones and sensor calculations per step.
@@ -111,6 +111,8 @@ For in-depth diagrams and message formats, see [ARCHITECTURE.md](ARCHITECTURE.md
 │   ├── task_allocation/
 │   ├── fault_tolerance/
 │   └── main.cpp                # Distributed MPI node entry point
+├── tests/
+│   └── migration_test.cpp      # Phase 2 2-node MPI migration & zero-duplicate test
 └── visualization/              # Unity client or telemetry bridges
 ```
 
@@ -164,7 +166,12 @@ Requires MPI installed (`simulation_node` target is built automatically when CMa
 
 # Or directly with mpirun
 mpirun -np 2 ./build/simulation_node
+
+# Run Phase 2 migration & zero-duplicate verification test
+mpirun -np 2 ./build/migration_test
 ```
+
+> **Cross-Platform Note (Windows + macOS):** For distributed runs between a Windows PC and a Mac over LAN/ZeroTier, build and run `simulation_node` and `migration_test` inside **WSL2 (Ubuntu) with OpenMPI** so both machines use the exact same OpenMPI wire protocol. Native Windows (MSVC) continues to support standalone `local_benchmark.exe` without MPI.
 
 ### 4. Run Across Two Physical Computers
 

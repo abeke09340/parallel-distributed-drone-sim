@@ -23,11 +23,14 @@ public:
     // Extract drones that crossed into foreign territory
     std::vector<DroneState> extract_boundary_crossing_drones();
 
-    // Ingest drone migrating into this node
-    void ingest_migrated_drone(const DroneState& state);
+    // Ingest drone migrating into this node (returns true if newly added, false if duplicate)
+    bool ingest_migrated_drone(const DroneState& state);
 
     // Complete migration out (clean up acknowledged drone)
     void finalize_migrated_out(int drone_id);
+
+    // Roll back timed-out or rejected migration (restore drone to active status)
+    void rollback_migrated_out(int drone_id);
 
     // Collect all local sensor observations made this step
     std::vector<SensorObservation> collect_sensor_observations();

@@ -38,11 +38,11 @@ int main(int argc, char** argv) {
     sim::SimulationEngine engine(rank, size);
     engine.initialize_agents(config.drones_per_node);
 
-    // Seed shared simulated targets
+    // Seed shared simulated targets (scaled to 50 km x 25 km world)
     std::vector<sim::Vector3> world_targets = {
-        sim::Vector3{250.0f, 500.0f, 0.0f}, // Region A target
-        sim::Vector3{490.0f, 510.0f, 0.0f}, // Boundary target
-        sim::Vector3{750.0f, 500.0f, 0.0f}  // Region B target
+        sim::Vector3{12500.0f, 12500.0f, 50.0f}, // Region A target
+        sim::Vector3{24900.0f, 12600.0f, 50.0f}, // Boundary target (near X = 25000 m)
+        sim::Vector3{37500.0f, 12500.0f, 50.0f}  // Region B target
     };
     engine.set_targets(world_targets);
 
@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
     // Inject an initial mission
     sim::Task mission;
     mission.task_id = (rank * 100) + 1;
-    mission.location = (rank == 0) ? sim::Vector3{400.0f, 400.0f, 30.0f} : sim::Vector3{600.0f, 600.0f, 30.0f};
+    mission.location = (rank == 0) ? sim::Vector3{20000.0f, 12000.0f, 80.0f} : sim::Vector3{30000.0f, 13000.0f, 80.0f};
     mission.type = sim::TaskType::RECONNAISSANCE;
     task_coord.submit_task(mission);
 
@@ -77,10 +77,8 @@ int main(int argc, char** argv) {
         auto local_obs = engine.collect_sensor_observations();
         fusion_mgr.add_observations(local_obs);
 
-        // Broadcast observations to peer node
-        for (const auto& obs : local_obs) {
-            mpi.send_sensor_observation(peer_rank, obs);
-        }
+        // Batch-broadcast observations to peer node via non-blocking MPI_Isend
+        mpi.send_sensor_observations_batch(peer_rank, local_obs);
 
         // Step C: Detect boundary crossings and trigger outbound migrations
         migration_mgr.process_outbound_migrations();
@@ -117,9 +115,10 @@ int main(int argc, char** argv) {
             fault_mgr.record_heartbeat(hb);
         }
 
-        // Step G: Process tasks and decay stale tracks
+        // Step G: Process tasks, decay stale tracks, check timeouts & liveness
         task_coord.process_pending_tasks();
         fusion_mgr.decay_tracks(step);
+        migration_mgr.check_timeouts(static_cast<uint32_t>(step));
         fault_mgr.check_liveness(step);
 
         // Step H: Telemetry log every 30 steps
