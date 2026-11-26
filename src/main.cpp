@@ -38,13 +38,13 @@ int main(int argc, char** argv) {
     sim::SimulationEngine engine(rank, size);
     engine.initialize_agents(config.drones_per_node);
 
-    // Seed shared simulated targets (scaled to 50 km x 25 km world)
-    std::vector<sim::Vector3> world_targets = {
-        sim::Vector3{12500.0f, 12500.0f, 50.0f}, // Region A target
-        sim::Vector3{24900.0f, 12600.0f, 50.0f}, // Boundary target (near X = 25000 m)
-        sim::Vector3{37500.0f, 12500.0f, 50.0f}  // Region B target
+    // Seed shared simulated TargetEntity objects (hostile and non-hostile)
+    std::vector<sim::TargetEntity> world_entities = {
+        sim::TargetEntity{0, sim::Vector3{12500.0f, 12500.0f, 50.0f}, 100.0f, false, 200.0f, true},
+        sim::TargetEntity{1, sim::Vector3{24900.0f, 12600.0f, 50.0f}, 100.0f, true,  200.0f, true},
+        sim::TargetEntity{2, sim::Vector3{37500.0f, 12500.0f, 50.0f}, 100.0f, true,  200.0f, true}
     };
-    engine.set_targets(world_targets);
+    engine.set_target_entities(world_entities);
 
     // 4. Initialize Subsystem Managers
     sim::MigrationManager migration_mgr(engine, mpi);
@@ -73,9 +73,21 @@ int main(int argc, char** argv) {
         // Step A: Parallel update with OpenMP
         engine.step(config.delta_time);
 
-        // Step B: Sensor observations & local fusion
+        // Step B: Sensor observations, local combat events & local fusion
         auto local_obs = engine.collect_sensor_observations();
         fusion_mgr.add_observations(local_obs);
+
+        auto local_damage = engine.collect_damage_events();
+        for (const auto& dmg : local_damage) {
+            if (dmg.hit) {
+                fusion_mgr.apply_damage_to_track(dmg.target_id, dmg.damage);
+                sim::CombatEventPayload evt{
+                    dmg.target_id, dmg.attacker_drone_id, dmg.source_rank,
+                    dmg.step, dmg.damage, dmg.hit
+                };
+                mpi.send_combat_event(peer_rank, evt);
+            }
+        }
 
         // Batch-broadcast observations to peer node via non-blocking MPI_Isend
         mpi.send_sensor_observations_batch(peer_rank, local_obs);
@@ -93,12 +105,20 @@ int main(int argc, char** argv) {
         std::vector<sim::MigrationAckPayload> incoming_acks;
         std::vector<sim::HeartbeatPayload> incoming_heartbeats;
         std::vector<sim::SensorObservation> incoming_observations;
+        std::vector<sim::CombatEventPayload> incoming_combat;
+        std::vector<sim::TaskAuctionPayload> incoming_announces;
+        std::vector<sim::TaskBidPayload> incoming_bids;
+        std::vector<sim::TaskClaimPayload> incoming_claims;
 
         mpi.poll_incoming_messages(
             incoming_migrations,
             incoming_acks,
             incoming_heartbeats,
-            incoming_observations
+            incoming_observations,
+            &incoming_combat,
+            &incoming_announces,
+            &incoming_bids,
+            &incoming_claims
         );
 
         // Step F: Handle incoming MPI data
@@ -111,12 +131,36 @@ int main(int argc, char** argv) {
         if (!incoming_observations.empty()) {
             fusion_mgr.add_observations(incoming_observations);
         }
+        for (const auto& evt : incoming_combat) {
+            if (evt.hit) {
+                sim::DamageEvent dmg{
+                    evt.target_id, evt.attacker_drone_id, evt.source_rank,
+                    evt.step, evt.damage, evt.hit
+                };
+                engine.apply_damage_event(dmg);
+                fusion_mgr.apply_damage_to_track(evt.target_id, evt.damage);
+            }
+        }
         for (const auto& hb : incoming_heartbeats) {
             fault_mgr.record_heartbeat(hb);
         }
 
-        // Step G: Process tasks, decay stale tracks, check timeouts & liveness
+        // Step G: Process tasks, force-ratio auctions, decay stale tracks, check timeouts & liveness
         task_coord.process_pending_tasks();
+        task_coord.update_active_tasks(fusion_mgr);
+        task_coord.evaluate_force_ratios(fusion_mgr);
+
+        for (const auto& ann : task_coord.pop_outbound_announcements()) {
+            mpi.send_task_announce(peer_rank, ann);
+        }
+        for (const auto& bid : task_coord.handle_incoming_announcements(incoming_announces)) {
+            mpi.send_task_bid(bid.announcing_rank, bid);
+        }
+        for (const auto& claim : task_coord.handle_incoming_bids(incoming_bids)) {
+            mpi.send_task_claim(claim.winning_rank, claim);
+        }
+        task_coord.handle_incoming_claims(incoming_claims);
+
         fusion_mgr.decay_tracks(step);
         migration_mgr.check_timeouts(static_cast<uint32_t>(step));
         fault_mgr.check_liveness(step);

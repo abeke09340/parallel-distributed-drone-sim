@@ -50,7 +50,11 @@ enum class DroneStatus : int32_t {
     MIGRATING_OUT = 2,
     MIGRATING_IN = 3,
     TASK_EXECUTING = 4,
-    FAILED = 5
+    FAILED = 5,
+    RECONNAISSANCE = 6,
+    OBJECT_INSPECTION = 7,
+    TARGET_ELIMINATION = 8,
+    EVADE = 9
 };
 
 // Full serializable Drone State (used in migration & replication)
@@ -94,24 +98,49 @@ struct SensorObservation {
     uint32_t step{0};
     Vector3 estimated_position;
     float confidence{1.0f};
+    bool is_hostile{false};
+    bool classified{false};
 };
+static_assert(std::is_trivially_copyable_v<SensorObservation>,
+              "SensorObservation must remain trivially copyable for MPI serialization");
 
-// Task / Mission description
+// Combat damage event (used in OpenMP thread-local buffers & MPI sync)
+struct DamageEvent {
+    int32_t target_id{0};
+    int32_t attacker_drone_id{0};
+    int32_t source_rank{0};
+    uint32_t step{0};
+    float damage{50.0f};
+    bool hit{true};
+};
+static_assert(std::is_trivially_copyable_v<DamageEvent>,
+              "DamageEvent must remain trivially copyable for MPI serialization");
+
+// Task / Mission description (flat POD for MPI auction & migration)
 enum class TaskType : int32_t {
     RECONNAISSANCE = 0,
     OBJECT_INSPECTION = 1,
-    AREA_SEARCH = 2
+    TARGET_ELIMINATION = 2,
+    AREA_SEARCH = 3
 };
 
 struct Task {
     int32_t task_id{0};
     TaskType type{TaskType::RECONNAISSANCE};
     Vector3 location;
+    Vector3 waypoints[3]{};
+    int32_t waypoint_count{0};
+    int32_t current_waypoint_idx{0};
+    int32_t target_id{-1};
     int32_t priority{1};
+    int32_t required_drones{1};
+    int32_t assigned_count{0};
     int32_t assigned_drone_id{-1};
     int32_t assigned_rank{-1};
     bool completed{false};
 };
+static_assert(std::is_trivially_copyable_v<Task>,
+              "Task must remain trivially copyable for MPI serialization");
 
 // Spatial region boundaries
 struct RegionBounds {

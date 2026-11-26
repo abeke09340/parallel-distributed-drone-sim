@@ -132,6 +132,18 @@ void MpiManager::send_combat_event(int dest_rank, const CombatEventPayload& evt)
     post_isend(dest_rank, TAG_COMBAT_EVENT, &evt, sizeof(CombatEventPayload));
 }
 
+void MpiManager::send_task_announce(int dest_rank, const TaskAuctionPayload& announce) {
+    post_isend(dest_rank, TAG_TASK_ANNOUNCE, &announce, sizeof(TaskAuctionPayload));
+}
+
+void MpiManager::send_task_bid(int dest_rank, const TaskBidPayload& bid) {
+    post_isend(dest_rank, TAG_TASK_BID, &bid, sizeof(TaskBidPayload));
+}
+
+void MpiManager::send_task_claim(int dest_rank, const TaskClaimPayload& claim) {
+    post_isend(dest_rank, TAG_TASK_CLAIM, &claim, sizeof(TaskClaimPayload));
+}
+
 namespace {
 template <typename T>
 void recv_typed_batch(MPI_Status& probe_status, std::vector<T>& out) {
@@ -159,7 +171,10 @@ void MpiManager::poll_incoming_messages(
     std::vector<MigrationAckPayload>& incoming_acks,
     std::vector<HeartbeatPayload>& incoming_heartbeats,
     std::vector<SensorObservation>& incoming_observations,
-    std::vector<CombatEventPayload>* incoming_combat_events
+    std::vector<CombatEventPayload>* incoming_combat_events,
+    std::vector<TaskAuctionPayload>* incoming_task_announces,
+    std::vector<TaskBidPayload>* incoming_task_bids,
+    std::vector<TaskClaimPayload>* incoming_task_claims
 ) {
     if (size_ <= 1) return;
 
@@ -191,6 +206,39 @@ void MpiManager::poll_incoming_messages(
             case TAG_COMBAT_EVENT:
                 if (incoming_combat_events != nullptr) {
                     recv_typed_batch(status, *incoming_combat_events);
+                } else {
+                    int byte_count = 0;
+                    MPI_Get_count(&status, MPI_BYTE, &byte_count);
+                    std::vector<uint8_t> discard(static_cast<size_t>(std::max(0, byte_count)));
+                    MPI_Recv(discard.data(), byte_count, MPI_BYTE,
+                             status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
+                break;
+            case TAG_TASK_ANNOUNCE:
+                if (incoming_task_announces != nullptr) {
+                    recv_typed_batch(status, *incoming_task_announces);
+                } else {
+                    int byte_count = 0;
+                    MPI_Get_count(&status, MPI_BYTE, &byte_count);
+                    std::vector<uint8_t> discard(static_cast<size_t>(std::max(0, byte_count)));
+                    MPI_Recv(discard.data(), byte_count, MPI_BYTE,
+                             status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
+                break;
+            case TAG_TASK_BID:
+                if (incoming_task_bids != nullptr) {
+                    recv_typed_batch(status, *incoming_task_bids);
+                } else {
+                    int byte_count = 0;
+                    MPI_Get_count(&status, MPI_BYTE, &byte_count);
+                    std::vector<uint8_t> discard(static_cast<size_t>(std::max(0, byte_count)));
+                    MPI_Recv(discard.data(), byte_count, MPI_BYTE,
+                             status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
+                break;
+            case TAG_TASK_CLAIM:
+                if (incoming_task_claims != nullptr) {
+                    recv_typed_batch(status, *incoming_task_claims);
                 } else {
                     int byte_count = 0;
                     MPI_Get_count(&status, MPI_BYTE, &byte_count);

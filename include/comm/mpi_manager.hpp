@@ -32,6 +32,9 @@ public:
     void send_sensor_observation(int dest_rank, const SensorObservation& obs);
     void send_sensor_observations_batch(int dest_rank, const std::vector<SensorObservation>& observations);
     void send_combat_event(int dest_rank, const CombatEventPayload& evt);
+    void send_task_announce(int dest_rank, const TaskAuctionPayload& announce);
+    void send_task_bid(int dest_rank, const TaskBidPayload& bid);
+    void send_task_claim(int dest_rank, const TaskClaimPayload& claim);
 
     // Reclaim completed non-blocking send buffers
     void flush_completed_sends();
@@ -42,7 +45,10 @@ public:
         std::vector<MigrationAckPayload>& incoming_acks,
         std::vector<HeartbeatPayload>& incoming_heartbeats,
         std::vector<SensorObservation>& incoming_observations,
-        std::vector<CombatEventPayload>* incoming_combat_events = nullptr
+        std::vector<CombatEventPayload>* incoming_combat_events = nullptr,
+        std::vector<TaskAuctionPayload>* incoming_task_announces = nullptr,
+        std::vector<TaskBidPayload>* incoming_task_bids = nullptr,
+        std::vector<TaskClaimPayload>* incoming_task_claims = nullptr
     );
 
     // Barrier sync

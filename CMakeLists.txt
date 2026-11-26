@@ -119,7 +119,30 @@ if(MPI_CXX_FOUND)
 
     add_test(NAME MigrationZeroDuplicateTest COMMAND ${MPIEXEC_EXECUTABLE} -np 2 $<TARGET_FILE:migration_test>)
 
-    message(STATUS "MPI found: building 'local_benchmark', 'simulation_node', and 'migration_test'")
+    add_executable(phase3_test
+        ${CORE_SIMULATION_SOURCES}
+        src/comm/mpi_manager.cpp
+        src/migration/migration_manager.cpp
+        src/fusion/sensor_fusion.cpp
+        src/task_allocation/task_coordinator.cpp
+        tests/phase3_test.cpp
+    )
+
+    target_link_libraries(phase3_test PRIVATE
+        MPI::MPI_CXX
+        OpenMP::OpenMP_CXX
+        Threads::Threads
+    )
+
+    target_include_directories(phase3_test PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+        ${MPI_CXX_INCLUDE_PATH}
+    )
+
+    add_test(NAME Phase3FusionAuctionTest COMMAND ${MPIEXEC_EXECUTABLE} -np 2 $<TARGET_FILE:phase3_test>)
+
+    message(STATUS "MPI found: building 'local_benchmark', 'simulation_node', 'migration_test', and 'phase3_test'")
     message(STATUS "MPI CXX Compiler: ${MPI_CXX_COMPILER}")
 else()
     message(STATUS "MPI not found: skipping 'simulation_node' target. Building 'local_benchmark' (Phase 1 OpenMP).")

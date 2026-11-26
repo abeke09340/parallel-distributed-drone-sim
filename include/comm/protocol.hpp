@@ -55,16 +55,30 @@ struct TaskAuctionPayload {
     int32_t task_id{0};
     TaskType type{TaskType::RECONNAISSANCE};
     Vector3 location;
+    int32_t target_id{-1};
     int32_t priority{1};
     int32_t announcing_rank{0};
+    int32_t remote_deficit{1};
+};
+
+// Task Auction bid response
+struct TaskBidPayload {
+    int32_t task_id{0};
+    int32_t target_id{-1};
+    int32_t candidate_drone_id{-1};
+    int32_t bidder_rank{0};
+    int32_t announcing_rank{0};
+    float utility{0.0f};
 };
 
 // Task Claim confirmation
 struct TaskClaimPayload {
     int32_t task_id{0};
+    int32_t target_id{-1};
     int32_t winning_drone_id{0};
     int32_t winning_rank{0};
     float winning_bid{0.0f};
+    Vector3 location;
 };
 
 static_assert(std::is_trivially_copyable_v<MigrationPayload>,
@@ -77,6 +91,8 @@ static_assert(std::is_trivially_copyable_v<CombatEventPayload>,
               "CombatEventPayload must be trivially copyable for MPI");
 static_assert(std::is_trivially_copyable_v<TaskAuctionPayload>,
               "TaskAuctionPayload must be trivially copyable for MPI");
+static_assert(std::is_trivially_copyable_v<TaskBidPayload>,
+              "TaskBidPayload must be trivially copyable for MPI");
 static_assert(std::is_trivially_copyable_v<TaskClaimPayload>,
               "TaskClaimPayload must be trivially copyable for MPI");
 

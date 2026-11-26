@@ -1,12 +1,23 @@
 #include "simulation/engine.hpp"
 #include "core/config.hpp"
-#include <omp.h>
-#include <random>
-#include <iostream>
 #include <algorithm>
 #include <cstddef>
+#include <iostream>
+#include <omp.h>
+#include <random>
 
 namespace sim {
+
+namespace {
+bool is_active_fsm_status(DroneStatus status) {
+    return status == DroneStatus::PATROL ||
+           status == DroneStatus::TASK_EXECUTING ||
+           status == DroneStatus::RECONNAISSANCE ||
+           status == DroneStatus::OBJECT_INSPECTION ||
+           status == DroneStatus::TARGET_ELIMINATION ||
+           status == DroneStatus::EVADE;
+}
+}  // namespace
 
 SimulationEngine::SimulationEngine(int rank, int num_ranks)
     : rank_(rank), num_ranks_(num_ranks) {
@@ -45,47 +56,106 @@ void SimulationEngine::initialize_agents(int count) {
 
 void SimulationEngine::set_targets(const std::vector<Vector3>& targets) {
     targets_ = targets;
+    target_entities_.clear();
+}
+
+void SimulationEngine::set_target_entities(const std::vector<TargetEntity>& entities) {
+    target_entities_ = entities;
+    targets_.clear();
+    targets_.reserve(entities.size());
+    for (const auto& e : entities) {
+        targets_.push_back(e.position);
+    }
+}
+
+void SimulationEngine::apply_damage_event(const DamageEvent& evt) {
+    if (!evt.hit || evt.damage <= 0.0f) return;
+    for (auto& target : target_entities_) {
+        if (target.id == evt.target_id && target.alive) {
+            target.hp = std::max(0.0f, target.hp - evt.damage);
+            if (target.hp <= 0.0f) {
+                target.alive = false;
+            }
+            break;
+        }
+    }
 }
 
 void SimulationEngine::step(float dt) {
     current_step_++;
 
+    const auto& config = get_global_config();
     const std::ptrdiff_t drone_count = static_cast<std::ptrdiff_t>(drones_.size());
+    const bool use_entities = !target_entities_.empty();
 
-    // Parallel agent kinematic updates with OpenMP (signed index for MSVC compatibility)
+    // Parallel agent kinematic & threat/FSM updates with OpenMP (signed index for MSVC compatibility)
     #pragma omp parallel for schedule(static)
     for (std::ptrdiff_t i = 0; i < drone_count; ++i) {
-        drones_[static_cast<size_t>(i)].update(dt);
+        auto& drone = drones_[static_cast<size_t>(i)];
+        drone.update(dt);
+        if (use_entities) {
+            drone.update_threat_and_fsm(target_entities_, dt);
+        }
     }
 
-    // Parallel sensor scans with thread-local buffers
+    // Parallel sensor scans and combat engagements with thread-local buffers
     latest_observations_.clear();
+    latest_damage_events_.clear();
     std::vector<std::vector<SensorObservation>> thread_observations;
+    std::vector<std::vector<DamageEvent>> thread_damage_events;
 
     #pragma omp parallel
     {
         #pragma omp single
         {
-            thread_observations.resize(static_cast<size_t>(omp_get_num_threads()));
+            size_t num_threads = static_cast<size_t>(omp_get_num_threads());
+            thread_observations.resize(num_threads);
+            thread_damage_events.resize(num_threads);
         }
 
         int tid = omp_get_thread_num();
-
-        const float radar_range = get_global_config().radar_range;
+        const float radar_range = config.radar_range;
+        const float inspection_range = config.inspection_range;
+        const float firing_range = config.firing_range;
 
         #pragma omp for schedule(dynamic, 16)
         for (std::ptrdiff_t i = 0; i < drone_count; ++i) {
-            auto obs = drones_[static_cast<size_t>(i)].scan_targets(targets_, current_step_, radar_range);
-            if (!obs.empty()) {
-                auto& local_buf = thread_observations[static_cast<size_t>(tid)];
-                local_buf.insert(local_buf.end(), obs.begin(), obs.end());
+            auto& drone = drones_[static_cast<size_t>(i)];
+            if (use_entities) {
+                auto obs = drone.scan_entities(
+                    target_entities_, current_step_, radar_range, inspection_range
+                );
+                if (!obs.empty()) {
+                    auto& local_obs = thread_observations[static_cast<size_t>(tid)];
+                    local_obs.insert(local_obs.end(), obs.begin(), obs.end());
+                }
+                drone.try_fire(
+                    target_entities_,
+                    current_step_,
+                    firing_range,
+                    thread_damage_events[static_cast<size_t>(tid)]
+                );
+            } else {
+                auto obs = drone.scan_targets(targets_, current_step_, radar_range);
+                if (!obs.empty()) {
+                    auto& local_obs = thread_observations[static_cast<size_t>(tid)];
+                    local_obs.insert(local_obs.end(), obs.begin(), obs.end());
+                }
             }
         }
     }
 
-    // Aggregate thread-local observations in deterministic thread order
+    // Aggregate thread-local observations and damage events in deterministic thread order
     for (const auto& obs_vec : thread_observations) {
         latest_observations_.insert(latest_observations_.end(), obs_vec.begin(), obs_vec.end());
+    }
+    for (const auto& dmg_vec : thread_damage_events) {
+        latest_damage_events_.insert(latest_damage_events_.end(), dmg_vec.begin(), dmg_vec.end());
+    }
+
+    // Apply local combat hits deterministically after parallel phase
+    for (const auto& evt : latest_damage_events_) {
+        apply_damage_event(evt);
     }
 }
 
@@ -98,8 +168,7 @@ std::vector<DroneState> SimulationEngine::extract_boundary_crossing_drones() {
     const float margin = get_global_config().migration_buffer_zone;
 
     for (auto& drone : drones_) {
-        DroneStatus status = drone.get_status();
-        if (status == DroneStatus::PATROL || status == DroneStatus::TASK_EXECUTING) {
+        if (is_active_fsm_status(drone.get_status())) {
             Vector3 pos = drone.get_position();
             // Hysteresis check: avoid rapid ping-pong migrations near X = 25000 m
             bool crossed_out = false;
@@ -120,8 +189,12 @@ std::vector<DroneState> SimulationEngine::extract_boundary_crossing_drones() {
 }
 
 bool SimulationEngine::ingest_migrated_drone(const DroneState& state) {
-    DroneStatus restored_status =
-        (state.assigned_task_id >= 0) ? DroneStatus::TASK_EXECUTING : DroneStatus::PATROL;
+    DroneStatus restored_status = state.status;
+    if (restored_status == DroneStatus::MIGRATING_OUT ||
+        restored_status == DroneStatus::MIGRATING_IN ||
+        restored_status == DroneStatus::IDLE) {
+        restored_status = (state.assigned_task_id >= 0) ? DroneStatus::TASK_EXECUTING : DroneStatus::PATROL;
+    }
 
     // De-duplication: check if drone is already locally present
     for (auto& drone : drones_) {
@@ -168,10 +241,14 @@ std::vector<SensorObservation> SimulationEngine::collect_sensor_observations() {
     return latest_observations_;
 }
 
+std::vector<DamageEvent> SimulationEngine::collect_damage_events() const {
+    return latest_damage_events_;
+}
+
 size_t SimulationEngine::get_active_drone_count() const {
     size_t active = 0;
     for (const auto& d : drones_) {
-        if (d.get_status() == DroneStatus::PATROL || d.get_status() == DroneStatus::TASK_EXECUTING) {
+        if (is_active_fsm_status(d.get_status())) {
             active++;
         }
     }
